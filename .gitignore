@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv
+.env
+venv/
+.env.*
+
+# SQLite
+*.db
+
+# PyCharm
+.idea/
+
+# Media / temp
+*.log
+*.pdf
+
+# excel
+*.xlsx
