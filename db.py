@@ -34,6 +34,14 @@ def init_db():
     )
     """)
 
+    # ===== Экскурсии =====
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS excursions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL
+    )
+    """)
+
     # ===== Календарь экскурсий =====
     cur.execute("""
     CREATE TABLE IF NOT EXISTS excursion_calendar (
@@ -48,10 +56,12 @@ def init_db():
     # ===== Заблокированные даты =====
     cur.execute("""
     CREATE TABLE IF NOT EXISTS blocked_dates (
-        date TEXT PRIMARY KEY,
+        excursion_id TEXT,
+        date TEXT,
         reason TEXT,
         blocked_by INTEGER,
-        blocked_at TEXT
+        blocked_at TEXT,
+        PRIMARY KEY (excursion_id, date)
     )
     """)
 
@@ -276,11 +286,29 @@ def get_calendar_load_level(excursion_id: str, date_str: str) -> str:
 
 
 def is_date_blocked(excursion_id: str, date_str: str) -> bool:
-    """
-    Проверка: доступна ли дата для бронирования
-    (0 мест = автоматически заблокирована)
-    """
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+
+    # ручная блокировка для конкретной экскурсии
+    cur.execute(
+        """
+        SELECT 1
+        FROM blocked_dates
+        WHERE excursion_id = ? AND date = ?
+        """,
+        (excursion_id, date_str)
+    )
+
+    if cur.fetchone():
+        conn.close()
+        return True
+
+    conn.close()
+
+    # либо нет свободных мест
     return get_free_places_for_date(excursion_id, date_str) <= 0
+
+
 
 
 def get_available_dates_range(
@@ -288,13 +316,6 @@ def get_available_dates_range(
     start_date: date,
     days_ahead: int = 14
 ) -> dict:
-    """
-    Возвращает словарь:
-    {
-        'YYYY-MM-DD': free_places
-    }
-    только на ближайшие N дней
-    """
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
@@ -312,23 +333,41 @@ def get_available_dates_range(
     ))
 
     rows = cur.fetchall()
+
+    # 🔒 блокировки ТОЛЬКО этой экскурсии
+    cur.execute(
+        """
+        SELECT date
+        FROM blocked_dates
+        WHERE excursion_id = ?
+        """,
+        (excursion_id,)
+    )
+    blocked = {row[0] for row in cur.fetchall()}
+
     conn.close()
 
     result = {}
     for date_str, total, booked in rows:
+        if date_str in blocked:
+            continue  # ❌ админ-блок
+
         free = max(total - booked, 0)
-        result[date_str] = free
+        if free > 0:
+            result[date_str] = free
 
     return result
 
-def block_date(date_str: str, admin_id: int, reason: str = ""):
+def block_date(excursion_id: str, date_str: str, admin_id: int, reason: str = ""):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
     cur.execute("""
-    INSERT OR REPLACE INTO blocked_dates (date, reason, blocked_by, blocked_at)
-    VALUES (?, ?, ?, ?)
+    INSERT OR REPLACE INTO blocked_dates
+    (excursion_id, date, reason, blocked_by, blocked_at)
+    VALUES (?, ?, ?, ?, ?)
     """, (
+        excursion_id,
         date_str,
         reason,
         admin_id,
@@ -339,16 +378,24 @@ def block_date(date_str: str, admin_id: int, reason: str = ""):
     conn.close()
 
 
-def block_date_range(start: date, end: date, admin_id: int, reason: str = ""):
+def block_date_range(
+    excursion_id: str,
+    start: date,
+    end: date,
+    admin_id: int,
+    reason: str = ""
+):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
     current = start
     while current <= end:
         cur.execute("""
-        INSERT OR REPLACE INTO blocked_dates (date, reason, blocked_by, blocked_at)
-        VALUES (?, ?, ?, ?)
+        INSERT OR REPLACE INTO blocked_dates
+        (excursion_id, date, reason, blocked_by, blocked_at)
+        VALUES (?, ?, ?, ?, ?)
         """, (
+            excursion_id,
             current.isoformat(),
             reason,
             admin_id,
@@ -360,21 +407,40 @@ def block_date_range(start: date, end: date, admin_id: int, reason: str = ""):
     conn.close()
 
 
-def unblock_date(date_str: str):
+def unblock_date(excursion_id: str, date_str: str):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
-    cur.execute("DELETE FROM blocked_dates WHERE date = ?", (date_str,))
+    cur.execute(
+        """
+        DELETE FROM blocked_dates
+        WHERE excursion_id = ? AND date = ?
+        """,
+        (excursion_id, date_str)
+    )
+
     conn.commit()
     conn.close()
 
 
-def get_blocked_dates() -> set[str]:
+def get_blocked_dates(excursion_id: str) -> set[str]:
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
 
-    cur.execute("SELECT date FROM blocked_dates")
+    cur.execute(
+        "SELECT date FROM blocked_dates WHERE excursion_id = ?",
+        (excursion_id,)
+    )
+
     rows = cur.fetchall()
     conn.close()
 
     return {row[0] for row in rows}
+
+def get_excursions():
+    """
+    Возвращает список экскурсий из конфига
+    НЕ из БД — экскурсии хранятся в коде!
+    """
+    from config import EXCURSIONS
+    return [(ex["id"], ex["title"]) for ex in EXCURSIONS]

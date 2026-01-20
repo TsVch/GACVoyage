@@ -29,6 +29,7 @@ from openpyxl import Workbook, load_workbook
 from calendar_utils import build_calendar, month_title
 from datetime import date, datetime, timedelta
 from admin.handlers import router as admin_router
+from config import EXCURSIONS
 from db import (
     init_db,
     save_order,
@@ -37,6 +38,7 @@ from db import (
     mark_paid,
     init_calendar_for_month,
     get_available_dates_range,
+    get_blocked_dates,
     book_places
 )
 # ======================
@@ -95,7 +97,10 @@ FAQ_TEXT = (
 
 ABOUT_TEXT = (
     "🚐 <b>Комфортные экскурсии и поездки</b>\n"
-    "Мы организуем автомобильные экскурсии на современных минивэнах по Москве и Московской области.\n\n"
+    "Мы организуем автомобильные экскурсии на современных минивэнах по Москве и Московской области.\n"
+    "‼️Также предлагаем услугу по аренде наших автомобилей с водителями🚙 для проведения всевозможных встреч 👩‍❤️‍👨,свадеб 👰‍♀️🤵‍♂️,сопровождению📢,мероприятий по перевозке групп туристов🧳.\n "
+    "💵 Аренда автомобиля - от 3500₽/чаc.\n"
+    "⌚ Минимальное время - 3 часа.\n\n"
     "🛡 <b>Безопасность</b> — продуманные маршруты и надёжный транспорт\n"
     "💺 <b>Комфорт</b> — просторный салон, удобные сиденья и приятная атмосфера\n"
     "✨ <b>Впечатления</b> — поездки, которые хочется вспоминать\n"
@@ -155,115 +160,6 @@ DRIVERS = [
         "telegram_id": 335639358 #292972793  # ← ЗАМЕНИ на реальный Telegram ID
     }
 ]
-
-# ======================
-# ДАННЫЕ ЭКСКУРСИЙ
-# ======================
-
-EXCURSIONS = [
-    {
-        "id": "pilgrims",
-        "title": "Паломники (Храмы и церкви России)",
-        "description": (
-            "Посещение трёх храмов:\n"
-            "✅ Ново-Иерусалимский (Истра)\n"
-            "✅ Храм вооружённых сил России (Кубинка)\n"
-            "✅ Храм Христа Спасителя (Москва)\n\n"
-            "⏰ В каждом храме свободное время 40-60 минут\n"
-            "⏰ Выезд в 08:00\n"
-            "⏰ Длительность ~4-5 часов\n\n"
-            "💵 Стоимость: 4000 ₽/чел."
-        ),
-        "images": [
-            "media/piligrims/5389031389581217457.jpg",
-            "media/piligrims/5389031389581217458.jpg",
-            "media/piligrims/5389031389581217459.jpg",
-            "media/piligrims/5389031389581217460.jpg",
-            "media/piligrims/5389031389581217464.jpg",
-            "media/piligrims/5389031389581217470.jpg",
-            "media/piligrims/5389031389581217472.jpg",
-            "media/piligrims/5389031389581217473.jpg",
-            "media/piligrims/5389031389581217474.jpg",
-            "media/piligrims/5389031389581217475.jpg",
-            "media/piligrims/5389031389581217476.jpg",
-            "media/piligrims/Изображение PNG 10.png",
-        ],
-        "start_time": "08:00",
-        "price": 4000,
-        "prepayment_percent": 30,
-        "pickup": {
-            "title": "ст. Опалиха (со стороны ЖК Опалиха О3)",
-            "address": "Московская обл., Красногорск, станция Опалиха",
-            "gis": "https://go.2gis.com/2Q7no"
-        },
-        "route": [
-            {
-                "name": "Ново-Иерусалимский монастырь",
-                "address": "Московская обл., г. Истра, ул. Советская, 2"
-            },
-            {
-                "name": "Храм Вооружённых сил РФ",
-                "address": "Московская обл., Одинцовский г.о., парк Патриот"
-            },
-            {
-                "name": "Храм Христа Спасителя",
-                "address": "г. Москва, ул. Волхонка, 15"
-            }
-        ]
-    },
-    {
-        "id": "new_year",
-        "title": "Новый год, 2026",
-        "description": (
-            "🏮Посещение самых красивых новогодних локаций Москвы для фотосессий 📸:\n"
-            "✅ Парад новогодних ёлок у ЦУМа 🎄\n"
-            "✅ Большой театр 🏛️\n"
-            "✅ Дом графа Шереметьева 🏰\n"
-            "✅ Парк Акведук 🎡\n\n"
-            "⏰ Выезд в 15:00\n\n "
-            "💵 Cтоимость: 3500 ₽/чел"
-        ),
-        "images": [
-            "media/new_year/5389031389581217210.jpg",
-            "media/new_year/5389031389581217212.jpg",
-            "media/new_year/5389031389581217213.jpg",
-            "media/new_year/5389031389581217214.jpg",
-            "media/new_year/5389031389581217215.jpg",
-            "media/new_year/5389031389581217216.jpg",
-            "media/new_year/5389031389581217217.jpg",
-            "media/new_year/5389031389581217218.jpg",
-            "media/new_year/5389031389581217226.jpg",
-            "media/new_year/5389031389581217229.jpg",
-        ],
-        "start_time": "15:00",
-        "price": 3500,
-        "prepayment_percent": 30,
-        "pickup": {
-            "title": "ст. Опалиха (со стороны ЖК Опалиха О3)",
-            "address": "Московская обл., Красногорск, станция Опалиха",
-            "gis": "https://go.2gis.com/2Q7no"
-        },
-        "route": [
-            {
-                "name": "Парад новогодних ёлок у ЦУМа",
-                "address": "г. Москва, ул. Петровка, 2"
-            },
-            {
-                "name": "Большой театр",
-                "address": "г. Москва, Театральная площадь, 1"
-            },
-            {
-                "name": "Дом графа Шереметьева",
-                "address": "г. Москва, Романов переулок, 2"
-            },
-            {
-                "name": "Парк Акведук",
-                "address": "г. Москва, ул. Малахитовая"
-            }
-        ]
-    }
-]
-
 
 EXECUTOR = {
     "name": "ИП Шин Сергей Тимофеевич",
@@ -653,14 +549,14 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     now = date.today()
 
-    # ⚠️ предполагается, что excursion_id уже сохранён в state ранее
+    # 🔥 excursion_id обязательно берём из state
     excursion_id = data.get("excursion_id")
 
-    # 🔹 получаем доступные даты из БД (на 14 дней вперёд)
+    # 🔥 Получаем доступные даты для выбранной экскурсии
     dates = get_available_dates_range(
         excursion_id=excursion_id,
         start_date=now,
-        days_ahead=14
+        days_ahead=MAX_DAYS_AHEAD
     )
 
     await state.update_data(
@@ -672,23 +568,28 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
         "📅 <b>Выберите дату экскурсии</b>\n\n"
         "Бронирование доступно на 14 дней вперёд\n\n"
         f"Текущий месяц: <b>{month_title(now.year, now.month)}</b>\n\n"
-        f"🟢 4-5 мест;\n 🟡 2–3 места;\n 🔴 1 место;\n ❌ нет мест"
-
+        "🟢 4–5 мест\n"
+        "🟡 2–3 места\n"
+        "🔴 1 место\n"
+        "❌ нет мест\n"
+        "⚪️ недоступно"
     )
 
     await callback.message.answer(
         text,
         parse_mode="HTML",
         reply_markup=build_calendar(
-            now.year,
-            now.month,
-            dates,                      # ← ВАЖНО: передаём dates
-            blocked_dates=BLOCKED_DATES
+            year=now.year,
+            month=now.month,
+            dates=dates,
+            blocked_dates=get_blocked_dates(excursion_id=excursion_id),  # 🔥
+            mode="user"
         )
     )
 
     await state.set_state(BookingStates.date)
     await callback.answer()
+
 
 
 
@@ -716,8 +617,9 @@ async def select_date(callback: CallbackQuery, state: FSMContext):
     await state.set_state(BookingStates.name)
     await callback.answer()
 
+
 # ======================
-# 🔥 ПЕРЕКЛЮЧЕНИЕ МЕСЯЦЕВ (ИЗМЕНЕНО)
+# 🔥 ПЕРЕКЛЮЧЕНИЕ МЕСЯЦЕВ (ИСПРАВЛЕНО)
 # ======================
 
 @dp.callback_query(lambda c: c.data.startswith("cal_prev"))
@@ -725,27 +627,44 @@ async def calendar_prev(callback: CallbackQuery, state: FSMContext):
     _, year, month = callback.data.split(":")
     year, month = int(year), int(month)
 
+    # Переключаемся на предыдущий месяц
     month -= 1
     if month == 0:
         month = 12
         year -= 1
 
+    data = await state.get_data()
+    excursion_id = data.get("excursion_id")
+
+    # 🔥 Получаем даты с учётом ограничения 14 дней
+    today = date.today()
+    dates = get_available_dates_range(
+        excursion_id=excursion_id,
+        start_date=today,
+        days_ahead=MAX_DAYS_AHEAD
+    )
+
     text = (
-        "📅 <b>Выберите дату экскурсии</b>\n"
+        "📅 <b>Выберите дату экскурсии</b>\n\n"
         f"Текущий месяц: <b>{month_title(year, month)}</b>\n\n"
-        "🟢 много мест · 🟡 средняя загрузка · 🟠 1 место · ❌ нет мест"
+        "🟢 4–5 мест\n"
+        "🟡 2–3 места\n"
+        "🔴 1 место\n"
+        "❌ нет мест\n"
+        "⚪️ недоступно"
     )
 
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
         reply_markup=build_calendar(
-            year,
-            month,
-            blocked_dates=BLOCKED_DATES
+            year=year,
+            month=month,
+            dates=dates,
+            blocked_dates=get_blocked_dates(excursion_id=excursion_id),
+            mode="user"
         )
     )
-
     await callback.answer()
 
 
@@ -754,29 +673,45 @@ async def calendar_next(callback: CallbackQuery, state: FSMContext):
     _, year, month = callback.data.split(":")
     year, month = int(year), int(month)
 
+    # Переключаемся на следующий месяц
     month += 1
     if month == 13:
         month = 1
         year += 1
 
+    data = await state.get_data()
+    excursion_id = data.get("excursion_id")
+
+    # 🔥 Получаем даты с учётом ограничения 14 дней
+    today = date.today()
+    dates = get_available_dates_range(
+        excursion_id=excursion_id,
+        start_date=today,
+        days_ahead=MAX_DAYS_AHEAD
+    )
+
     text = (
-        "📅 <b>Выберите дату экскурсии</b>\n"
+        "📅 <b>Выберите дату экскурсии</b>\n\n"
         f"Текущий месяц: <b>{month_title(year, month)}</b>\n\n"
-        "🟢 много мест · 🟡 средняя загрузка · 🟠 1 место · ❌ нет мест"
+        "🟢 4–5 мест\n"
+        "🟡 2–3 места\n"
+        "🔴 1 место\n"
+        "❌ нет мест\n"
+        "⚪️ недоступно"
     )
 
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
         reply_markup=build_calendar(
-            year,
-            month,
-            blocked_dates=BLOCKED_DATES
+            year=year,
+            month=month,
+            dates=dates,
+            blocked_dates=get_blocked_dates(excursion_id=excursion_id),
+            mode="user"
         )
     )
-
     await callback.answer()
-
 #@dp.message(BookingStates.date)
 #async def book_date(message: Message, state: FSMContext):
 #    await state.update_data(date=message.text)

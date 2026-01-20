@@ -38,19 +38,17 @@ def seat_indicator(free: int) -> str:
         return "🟢"
     return ""
 
-
 def build_calendar(
     year: int,
     month: int,
-    dates: dict,                 # ← данные из БД
+    dates: dict,                 # {date_str: free_seats}
     blocked_dates: set[str] | None = None,
-    mode: str = "user"
+    mode: str = "user"            # "user" или "admin"
 ):
     if blocked_dates is None:
         blocked_dates = set()
 
     kb = InlineKeyboardBuilder()
-
     today = date.today()
     last_allowed = today + timedelta(days=MAX_DAYS_AHEAD)
 
@@ -66,52 +64,37 @@ def build_calendar(
 
         for day in week:
             if day == 0:
-                row.append(
-                    InlineKeyboardButton(text=" ", callback_data="ignore")
-                )
+                row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
                 continue
 
             current_date = date(year, month, day)
             date_str = current_date.strftime("%Y-%m-%d")
 
-            # ❌ вне допустимого диапазона (прошлые / дальше 14 дней)
+            # ❌ вне допустимого диапазона
             if current_date < today or current_date > last_allowed:
-                row.append(
-                    InlineKeyboardButton(text=" ", callback_data="ignore")
-                )
+                row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
                 continue
 
-            # ❌ ручная админ-блокировка
+            # ❌ админ-блокировка
             if date_str in blocked_dates:
-                row.append(
-                    InlineKeyboardButton(text=f"{day} ❌", callback_data="ignore")
-                )
+                callback = f"admin_blocked:{date_str}" if mode == "admin" else "ignore"
+                row.append(InlineKeyboardButton(text=f"{day}❌", callback_data=callback))
                 continue
 
-            # 🔍 свободные места из БД
+            # 🔍 свободные места
             free_seats = dates.get(date_str, 0)
 
+            # ❌ мест нет
             if free_seats <= 0:
-                row.append(
-                    InlineKeyboardButton(
-                        text=f"{day}❌",
-                        callback_data="ignore"
-                    )
-                )
-            else:
-                indicator = seat_indicator(free_seats)
-                callback = (
-                    f"admin_date:{date_str}"
-                    if mode == "admin"
-                    else f"date:{date_str}"
-                )
+                callback = f"admin_full:{date_str}" if mode == "admin" else "ignore"
+                row.append(InlineKeyboardButton(text=f"{day}❌", callback_data=callback))
+                continue
 
-                row.append(
-                    InlineKeyboardButton(
-                        text=f"{day}{indicator}",
-                        callback_data=callback
-                    )
-                )
+            # ✅ есть места
+            indicator = seat_indicator(free_seats)
+            callback = f"admin_date:{date_str}" if mode == "admin" else f"date:{date_str}"
+
+            row.append(InlineKeyboardButton(text=f"{day}{indicator}", callback_data=callback))
 
         kb.row(*row)
 
