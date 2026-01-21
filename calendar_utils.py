@@ -1,101 +1,163 @@
-import calendar
 from datetime import date, timedelta
-from aiogram.types import InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from db import get_free_places_for_date
-print("📁 calendar_utils path:", __file__)
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 MONTHS_RU = [
-    "", "Январь", "Февраль", "Март", "Апрель",
-    "Май", "Июнь", "Июль", "Август",
-    "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
 ]
-
-WEEKDAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-
-MAX_DAYS_AHEAD = 14
-MAX_SEATS = 5
 
 
 def month_title(year: int, month: int) -> str:
-    return f"{MONTHS_RU[month]} {year}"
+    """Возвращает название месяца и год"""
+    return f"{MONTHS_RU[month - 1]} {year}"
 
-
-def load_free_seats_callback(date_str, dates_dict: dict):
-    """
-    dates_dict: { 'YYYY-MM-DD': free_places }
-    """
-    return dates_dict.get(date_str)
-
-def seat_indicator(free: int) -> str:
-    if free == 0:
-        return "❌"
-    elif free == 1:
-        return "🔴"
-    elif free <= 3:
-        return "🟡"
-    elif free > 3:
-        return "🟢"
-    return ""
 
 def build_calendar(
-    year: int,
-    month: int,
-    dates: dict,                 # {date_str: free_seats}
-    blocked_dates: set[str] | None = None,
-    mode: str = "user"            # "user" или "admin"
-):
-    if blocked_dates is None:
-        blocked_dates = set()
+        year: int,
+        month: int,
+        dates: dict,
+        blocked_dates: set,
+        mode: str = "user"
+) -> InlineKeyboardMarkup:
+    """
+    Строит календарь с датами
+    dates: [(date_str, free_places), ...]
+    blocked_dates: {"2026-01-20", ...}
+    mode: "user" или "admin"
+    """
+    # Создаём словарь дат для быстрого доступа
+    dates_dict = dates
 
-    kb = InlineKeyboardBuilder()
+    # Определяем границы месяца
+    first_day = date(year, month, 1)
+    if month == 12:
+        last_day = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        last_day = date(year, month + 1, 1) - timedelta(days=1)
+
+    # Текущая дата и лимиты бронирования
     today = date.today()
-    last_allowed = today + timedelta(days=MAX_DAYS_AHEAD)
+    max_booking_date = today + timedelta(days=14)
 
-    # ===== Заголовок дней недели =====
-    for wd in WEEKDAYS_RU:
-        kb.button(text=wd, callback_data="ignore")
-    kb.adjust(7)
+    # Начинаем строить клавиатуру
+    keyboard = []
 
-    cal = calendar.monthcalendar(year, month)
+    # ========== РЯД 1: ЗАГОЛОВОК С ПЕРЕКЛЮЧЕНИЕМ ==========
+    if mode == "admin":
+        prev_cb = f"admin_cal_prev:{year}:{month}"
+        next_cb = f"admin_cal_next:{year}:{month}"
+    else:
+        prev_cb = f"cal_prev:{year}:{month}"
+        next_cb = f"cal_next:{year}:{month}"
+    header_row = [
+        InlineKeyboardButton(text="◀️", callback_data=prev_cb),
+        InlineKeyboardButton(text = month_title(year, month), callback_data="ignore"),
+        InlineKeyboardButton(text="▶️", callback_data=next_cb),
+    ]
+    keyboard.append(header_row)
 
-    for week in cal:
-        row = []
+    # ========== РЯД 2: ДНИ НЕДЕЛИ ==========
+    weekdays_row = [
+        InlineKeyboardButton(text="Пн", callback_data="ignore"),
+        InlineKeyboardButton(text="Вт", callback_data="ignore"),
+        InlineKeyboardButton(text="Ср", callback_data="ignore"),
+        InlineKeyboardButton(text="Чт", callback_data="ignore"),
+        InlineKeyboardButton(text="Пт", callback_data="ignore"),
+        InlineKeyboardButton(text="Сб", callback_data="ignore"),
+        InlineKeyboardButton(text="Вс", callback_data="ignore")
+    ]
+    keyboard.append(weekdays_row)
 
-        for day in week:
-            if day == 0:
-                row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
-                continue
+    # ========== РЯДЫ 3+: КАЛЕНДАРНАЯ СЕТКА ==========
+    current_row = []
 
-            current_date = date(year, month, day)
-            date_str = current_date.strftime("%Y-%m-%d")
+    # Пустые ячейки до первого дня месяца
+    weekday = first_day.weekday()  # 0=Пн, 6=Вс
+    for _ in range(weekday):
+        current_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
 
-            # ❌ вне допустимого диапазона
-            if current_date < today or current_date > last_allowed:
-                row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
-                continue
+    # Заполняем даты месяца
+    current_day = first_day
+    while current_day <= last_day:
+        date_str = current_day.isoformat()
+        day_num = current_day.day
 
-            # ❌ админ-блокировка
-            if date_str in blocked_dates:
-                callback = f"admin_blocked:{date_str}" if mode == "admin" else "ignore"
-                row.append(InlineKeyboardButton(text=f"{day}❌", callback_data=callback))
-                continue
+        # Проверяем условия
+        is_blocked = date_str in blocked_dates
+        is_past = current_day < today
+        is_too_far = current_day > max_booking_date
+        free_places = dates_dict.get(date_str, 0)
 
-            # 🔍 свободные места
-            free_seats = dates.get(date_str, 0)
+        # ========== РЕЖИМ ПОЛЬЗОВАТЕЛЯ ==========
+        if mode == "user":
+            if is_past or is_too_far:
+                text = f"{day_num}⚪️"
+                callback = "ignore"
+            elif is_blocked:
+                text = f"{day_num}❌"
+                callback = "ignore"
+            elif free_places == 0:
+                text = f"{day_num}🚫"
+                callback = "ignore"
+            elif free_places == 1:
+                text = f"{day_num}🔴"
+                callback = f"date:{date_str}"
+            elif free_places <= 3:
+                text = f"{day_num}🟡"
+                callback = f"date:{date_str}"
+            else:
+                text = f"{day_num}🟢"
+                callback = f"date:{date_str}"
 
-            # ❌ мест нет
-            if free_seats <= 0:
-                callback = f"admin_full:{date_str}" if mode == "admin" else "ignore"
-                row.append(InlineKeyboardButton(text=f"{day}❌", callback_data=callback))
-                continue
 
-            # ✅ есть места
-            indicator = seat_indicator(free_seats)
-            callback = f"admin_date:{date_str}" if mode == "admin" else f"date:{date_str}"
+        # ========== РЕЖИМ АДМИНА ==========
+        else:
+            # 🔥 ВАЖНО: админ НЕ ограничен MAX_DAYS_AHEAD
+            if is_past or is_too_far:
+                text = f"{day_num}⚪️"
+                callback = "ignore"
 
-            row.append(InlineKeyboardButton(text=f"{day}{indicator}", callback_data=callback))
+            elif is_blocked:
+                text = f"{day_num}❌"
+                callback = f"admin_date:{date_str}"
 
-        kb.row(*row)
+            elif free_places <= 0:
+                # ❗ теперь админ видит, что день "полный"
+                text = f"{day_num}🚫"
+                callback = f"admin_date:{date_str}"
 
-    return kb.as_markup()
+            elif free_places == 1:
+                text = f"{day_num}🔴"
+                callback = f"admin_date:{date_str}"
+
+            elif free_places <= 3:
+                text = f"{day_num}🟡"
+                callback = f"admin_date:{date_str}"
+
+            else:
+                text = f"{day_num}🟢"
+                callback = f"admin_date:{date_str}"
+
+        current_row.append(InlineKeyboardButton(text=text, callback_data=callback))
+
+        # Если ряд заполнен (7 дней) - добавляем в клавиатуру
+        if len(current_row) == 7:
+            keyboard.append(current_row)
+            current_row = []
+
+        current_day += timedelta(days=1)
+
+    # Добавляем последний неполный ряд, если есть
+    if current_row:
+        # Дополняем пустыми ячейками до 7
+        while len(current_row) < 7:
+            current_row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
+        keyboard.append(current_row)
+
+    # ========== КНОПКА "НАЗАД" ДЛЯ АДМИНА ==========
+    if mode == "admin":
+        keyboard.append([
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_back_to_excursions")
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

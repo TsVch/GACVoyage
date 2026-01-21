@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, timedelta
 from aiogram import Router
 from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
@@ -8,8 +8,8 @@ from aiogram.fsm.context import FSMContext
 from admin.permissions import is_admin
 from admin.keyboards import admin_main_kb, admin_dates_kb, admin_excursions_kb
 from admin.fsm import AdminBlockFSM
-from admin.services import block_date, block_date_range, unblock_date  # ✅ добавлен unblock_date
-from calendar_utils import build_calendar
+from admin.services import block_date, block_date_range, unblock_date
+from calendar_utils import build_calendar, month_title
 from db import get_blocked_dates, get_excursions, get_available_dates_range
 
 router = Router()
@@ -96,10 +96,7 @@ async def admin_excursion_selected(callback: CallbackQuery, state: FSMContext):
     elif mode == "range":
         prompt = "📆 <b>Выберите НАЧАЛЬНУЮ дату диапазона</b>"
     elif mode == "unblock":
-        prompt = (
-            "🟢 <b>Выберите дату для разблокировки</b>\n\n"
-            "❌ — заблокированные даты"
-        )
+        prompt = "🟢 <b>Выберите дату для разблокировки</b>\n\n❌ — заблокированные даты"
     else:
         prompt = "📅 <b>Выберите дату</b>"
 
@@ -117,20 +114,8 @@ async def admin_excursion_selected(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ====== Назад в админ-панель ======
-@router.callback_query(lambda c: c.data == "admin_back")
-async def admin_back(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text(
-        "🎛 <b>Админ-панель</b>",
-        parse_mode="HTML",
-        reply_markup=admin_main_kb()
-    )
-    await callback.answer()
-
-
-# ==== Переключение месяцев в админ-календаре ======
-@router.callback_query(lambda c: c.data.startswith("cal_prev"))
+# ====== Переключение месяцев (PREV) ======
+@router.callback_query(lambda c: c.data.startswith("admin_cal_prev"))
 async def admin_calendar_prev(callback: CallbackQuery, state: FSMContext):
     _, year, month = callback.data.split(":")
     year, month = int(year), int(month)
@@ -144,6 +129,10 @@ async def admin_calendar_prev(callback: CallbackQuery, state: FSMContext):
     excursion_id = data.get("excursion_id")
     mode = data.get("mode")
 
+    if not excursion_id:
+        await callback.answer("❌ Ошибка: экскурсия не выбрана", show_alert=True)
+        return
+
     today = date.today()
     dates = get_available_dates_range(excursion_id, today, MAX_DAYS_AHEAD)
     blocked = get_blocked_dates(excursion_id)
@@ -160,14 +149,13 @@ async def admin_calendar_prev(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         prompt,
         parse_mode="HTML",
-        reply_markup=build_calendar(
-            year, month, dates, blocked, mode="admin"
-        )
+        reply_markup=build_calendar(year, month, dates, blocked, mode="admin")
     )
     await callback.answer()
 
 
-@router.callback_query(lambda c: c.data.startswith("cal_next"))
+# ====== Переключение месяцев (NEXT) ======
+@router.callback_query(lambda c: c.data.startswith("admin_cal_next"))
 async def admin_calendar_next(callback: CallbackQuery, state: FSMContext):
     _, year, month = callback.data.split(":")
     year, month = int(year), int(month)
@@ -181,6 +169,10 @@ async def admin_calendar_next(callback: CallbackQuery, state: FSMContext):
     excursion_id = data.get("excursion_id")
     mode = data.get("mode")
 
+    if not excursion_id:
+        await callback.answer("❌ Ошибка: экскурсия не выбрана", show_alert=True)
+        return
+
     today = date.today()
     dates = get_available_dates_range(excursion_id, today, MAX_DAYS_AHEAD)
     blocked = get_blocked_dates(excursion_id)
@@ -197,11 +189,40 @@ async def admin_calendar_next(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         prompt,
         parse_mode="HTML",
-        reply_markup=build_calendar(
-            year, month, dates, blocked, mode="admin"
-        )
+        reply_markup=build_calendar(year, month, dates, blocked, mode="admin")
     )
     await callback.answer()
+
+
+# ====== Кнопка "Назад к выбору экскурсии" ======
+@router.callback_query(lambda c: c.data == "admin_back_to_excursions")
+async def admin_back_to_excursions(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    mode = data.get("mode")
+
+    excursions = get_excursions()
+
+    await state.update_data(mode=mode)
+
+    await callback.message.edit_text(
+        "🧭 <b>Выберите экскурсию</b>",
+        parse_mode="HTML",
+        reply_markup=admin_excursions_kb(excursions)
+    )
+    await callback.answer()
+
+
+# ====== Назад в админ-панель ======
+@router.callback_query(lambda c: c.data == "admin_back")
+async def admin_back(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text(
+        "🎛 <b>Админ-панель</b>",
+        parse_mode="HTML",
+        reply_markup=admin_main_kb()
+    )
+    await callback.answer()
+
 
 # ====== Закрыть админ-панель ======
 @router.callback_query(lambda c: c.data == "admin_exit")
@@ -243,14 +264,14 @@ async def admin_pick_start(callback: CallbackQuery, state: FSMContext):
         success = unblock_date(excursion_id, picked)
 
         if success:
-            # ✅ Обновляем календарь после разблокировки
-            dates = get_available_dates_range(excursion_id, picked_date, MAX_DAYS_AHEAD)
+            # Обновляем календарь после разблокировки
+            dates = get_available_dates_range(excursion_id, date.today(), MAX_DAYS_AHEAD)
             blocked = get_blocked_dates(excursion_id)
 
             await callback.answer("🟢 Дата разблокирована")
             await callback.message.edit_text(
-                "🟢 <b>Выберите дату для разблокировки</b>\n\n"
-                "❌ — заблокированные даты\n\n"
+                f"🟢 <b>Выберите дату для разблокировки</b>\n\n"
+                f"❌ — заблокированные даты\n\n"
                 f"✅ Дата {picked} успешно разблокирована",
                 parse_mode="HTML",
                 reply_markup=build_calendar(
@@ -264,7 +285,7 @@ async def admin_pick_start(callback: CallbackQuery, state: FSMContext):
         else:
             await callback.answer("⚠️ Дата не была заблокирована", show_alert=True)
 
-        return  # ✅ НЕ очищаем state, чтобы можно было разблокировать ещё даты
+        return
 
     # 📆 начало диапазона
     if mode == "range":

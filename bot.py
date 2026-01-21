@@ -571,7 +571,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
         "🟢 4–5 мест\n"
         "🟡 2–3 места\n"
         "🔴 1 место\n"
-        "❌ нет мест\n"
+        "🚫 нет мест\n"
         "⚪️ недоступно"
     )
 
@@ -619,15 +619,14 @@ async def select_date(callback: CallbackQuery, state: FSMContext):
 
 
 # ======================
-# 🔥 ПЕРЕКЛЮЧЕНИЕ МЕСЯЦЕВ (ИСПРАВЛЕНО)
+# 🔥 ПЕРЕКЛЮЧЕНИЕ МЕСЯЦЕВ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ
 # ======================
 
-@dp.callback_query(lambda c: c.data.startswith("cal_prev"))
+@dp.callback_query(lambda c: c.data.startswith("cal_prev") and not c.data.startswith("cal_prev_admin"))
 async def calendar_prev(callback: CallbackQuery, state: FSMContext):
     _, year, month = callback.data.split(":")
     year, month = int(year), int(month)
 
-    # Переключаемся на предыдущий месяц
     month -= 1
     if month == 0:
         month = 12
@@ -636,7 +635,6 @@ async def calendar_prev(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     excursion_id = data.get("excursion_id")
 
-    # 🔥 Получаем даты с учётом ограничения 14 дней
     today = date.today()
     dates = get_available_dates_range(
         excursion_id=excursion_id,
@@ -650,7 +648,7 @@ async def calendar_prev(callback: CallbackQuery, state: FSMContext):
         "🟢 4–5 мест\n"
         "🟡 2–3 места\n"
         "🔴 1 место\n"
-        "❌ нет мест\n"
+        "🚫 нет мест\n"
         "⚪️ недоступно"
     )
 
@@ -668,12 +666,11 @@ async def calendar_prev(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@dp.callback_query(lambda c: c.data.startswith("cal_next"))
+@dp.callback_query(lambda c: c.data.startswith("cal_next") and not c.data.startswith("cal_next_admin"))
 async def calendar_next(callback: CallbackQuery, state: FSMContext):
     _, year, month = callback.data.split(":")
     year, month = int(year), int(month)
 
-    # Переключаемся на следующий месяц
     month += 1
     if month == 13:
         month = 1
@@ -682,7 +679,6 @@ async def calendar_next(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     excursion_id = data.get("excursion_id")
 
-    # 🔥 Получаем даты с учётом ограничения 14 дней
     today = date.today()
     dates = get_available_dates_range(
         excursion_id=excursion_id,
@@ -696,7 +692,8 @@ async def calendar_next(callback: CallbackQuery, state: FSMContext):
         "🟢 4–5 мест\n"
         "🟡 2–3 места\n"
         "🔴 1 место\n"
-        "❌ нет мест\n"
+        "🚫 нет мест\n"
+        "❌ заблокировано для брони\n"
         "⚪️ недоступно"
     )
 
@@ -712,6 +709,8 @@ async def calendar_next(callback: CallbackQuery, state: FSMContext):
         )
     )
     await callback.answer()
+
+
 #@dp.message(BookingStates.date)
 #async def book_date(message: Message, state: FSMContext):
 #    await state.update_data(date=message.text)
